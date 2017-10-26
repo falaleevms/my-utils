@@ -1,0 +1,111 @@
+#! /usr/bin/env python3
+
+import subprocess, re, os
+from sys import argv
+
+
+ABS_PATH = os.path.split(os.path.abspath(__file__))[0]
+SCRIPTS_DIRECTORY = ABS_PATH + "/../scripts/"
+
+platform = None
+lock_files_dir = None
+device_name_s = None
+is_get_serial = False
+
+devices_array={}
+
+def print_usage():
+    print("""Usage: sdpinfo [--getserial device_name]
+
+List all digilent devices, their names, serial numbers and terminal files""")
+
+for key in argv:
+    if key == "--help":
+        print_usage()
+        exit(0)
+    if key == "--getserial":
+        def err():
+            print("you have to specify device name after \"--getserial\" (ex.: --getserial AXS101)")
+            exit(1)
+        try:
+            device_name_s=argv[argv.index("--getserial")+1]
+            is_get_serial=True
+        except IndexError as e:
+            print(e)
+            err()
+
+
+
+
+# Execute 'dadutil enum' and capture and split output
+dadutil_proc = subprocess.run(['dadutil', 'enum'], stdout=subprocess.PIPE)
+divices_serial_name_array = dadutil_proc.stdout.decode("utf-8").split('\n\nDevice:')
+# divices_serial_name_array = b'Found 2 device(s)\n\nDevice: AXS101\n    Product Name:   Synopsys ARC Xplorer System\n    User Name:      AXS101\n    Serial Number:  2516420000A3\n\nDevice: AXS103\n    Product Name:   DesignWare ARC SDP\n    User Name:      AXS103\n    \n'.decode("utf-8").split('\n\nDevice:')
+
+
+# Append to devices_array information like:
+# { SERIAL_NUMBER: {'user name': XXXX }}
+for device_info in divices_serial_name_array:
+    device_info_arr = device_info.split('\n')
+    for device_param in device_info_arr:
+        if re.match(".*User Name:.*", device_param):
+            device_user_name = device_param.split()[-1]
+            device_serial_number = None
+            try:
+                device_serial_number = device_info_arr[device_info_arr.index(device_param)+1].split()[-1]
+            except IndexError as e:
+                print("[Warning] : no serial number for device " + device_user_name)
+            if device_serial_number:
+                devices_array[device_serial_number]={'user name': device_user_name}
+
+devices_term_path_proc = subprocess.run(['devices-terminal'], stdout=subprocess.PIPE)
+devices_term_path_array = devices_term_path_proc.stdout.decode("utf-8").split('\n')
+
+# Append to devices_array terminal file path,
+# now devices_array looks like:
+# { SERIAL_NUMBER: {'user name': XXXX, path: PATH_TO_TERMINAL_FILE}}
+for device_info in devices_term_path_array:
+    try:
+        serial_number = device_info.split()[1]
+        device_path = device_info.split()[0]
+        try:
+            devices_array[serial_number]['path']=device_path
+        except KeyError:
+            print("[Warning] devices-term-ser.sh find device {} serial {}, but dadutil not".format(device_path, serial_number))
+    except IndexError as e:
+        continue
+
+if is_get_serial:
+    for serial in devices_array:
+        if devices_array[serial]['user name']==device_name_s:
+            print(serial)
+            exit(0)
+    print("No such device: " + device_name_s)
+    exit(0)
+
+
+
+for serial_number in devices_array:
+    try:
+        print("DEVICE: \t" + devices_array[serial_number]['user name'])
+        print("SERIAL NUMBER:\t" + str(serial_number))
+        print("TERMINAL:\t" + devices_array[serial_number]['path'])
+        print()
+    except:
+        print()
+
+exit(0)
+
+# for serial_number in devices_array:
+#     current_sdp_type = devices_array[serial_number]['user name'].split("_")[0]
+#     if current_sdp_type == platform:
+#         if not os.path.isfile(lock_files_dir + serial_number + ".lock"):
+#             with open("sdp-info.tmp", "w") as sdp_info_file:
+#                 sdp_info_file.write(devices_array[serial_number]['user name'] + " "
+#                     + serial_number + " " + devices_array[serial_number]['path'] + "\n")
+#                 exit(0)
+#         else:
+#             print(lock_files_dir + serial_number + " exist")
+#
+# print("[Error] There is no free {} SDP to lunch verifiaction".format(platform))
+# exit(1)

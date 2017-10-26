@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+
+if [[ -z $1 && -z $2 && -z $3 ]]
+then
+  echo "Usage: load axs101|axs103|hsdk SDP_NAME VMLINUX_PATH"
+  exit 1
+fi
+
+SDP_NAME=$2
+VMLINUX_PATH=$3
+
+wcount=0
+rff-reset --serial `sdpinfo --getserial $SDP_NAME`
+while [ $? != 0 ]
+do
+  echo "count -- $wcount"
+  ((wcount++))
+  if [ wcount = 10 ]; then
+    echo '[Error] can not reset SDP'
+    exit 1
+  fi
+  rff-reset --serial `sdpinfo --getserial $SDP_NAME`
+done
+
+# Run mdb in background
+if [ $1 = axs101 ]; then
+  mdb -digilent -OK -cl -run ${VMLINUX_PATH} -prop=dig_device=$SDP_NAME # 1>mdb.log 2>&1 &
+elif [ $1 = axs103 ]; then
+  mdb -pset=1 -psetname=core0 -digilent ${VMLINUX_PATH}  -prop=dig_device=$SDP_NAME
+  mdb -pset=2 -psetname=core1 -digilent -prop=download=2 ${VMLINUX_PATH}  -prop=dig_device=$SDP_NAME
+  mdb -multifiles=core0,core1 -OK -run # 1>mdb.log 2>&1 &
+elif [ $1 = hsdk ]; then
+  # VMLINUX_PATH=/SCRATCH/binary-files/vmlinux/vmlinux_hsdk_verif
+  # -on=trace_board_interface
+  mdb -pset=1 -psetname=core0 -digilent ${VMLINUX_PATH} -prop=dig_device=$SDP_NAME
+  mdb -pset=2 -psetname=core1 -digilent -prop=download=2  ${VMLINUX_PATH} -prop=dig_device=$SDP_NAME
+  mdb -pset=3 -psetname=core2 -digilent -prop=download=2 ${VMLINUX_PATH} -prop=dig_device=$SDP_NAME
+  mdb -pset=4 -psetname=core3 -digilent -prop=download=2 ${VMLINUX_PATH} -prop=dig_device=$SDP_NAME
+  mdb -multifiles=core0,core1,core2,core3 -OK -cl -run
+else
+ echo 'Error: Incoorect platfom selected'
+ exit 1
+fi
+
+sleep 4
+
+# if [ `ps aux | grep mdb | wc -l` = 1 ]; then
+#   echo "Error: no mdb lunch, look ./mdb.log"
+# fi
+
+# echo "mdb strts, but better to cheсk mdb.log"
+# is [ -z `ps | grep mdb | awk '{print($0)}'` ]
+
+# VMLINUX_PATH=/SCRATCH/binary-files/vmlinux/vmlinux_hsdk_verif
+# mdb -pset=1 -psetname=core0 -digilent -off=check_dccm_wrap ${VMLINUX_PATH} && \
+# mdb -pset=2 -psetname=core1 -digilent -prop=download=2 -off=check_dccm_wrap ${VMLINUX_PATH} && \
+# mdb -pset=3 -psetname=core2 -digilent -prop=download=2 -off=check_dccm_wrap ${VMLINUX_PATH} && \
+# mdb -pset=4 -psetname=core3 -digilent -prop=download=2 -off=check_dccm_wrap ${VMLINUX_PATH} &&  \
+# mdb -multifiles=core0,core1,core2,core3 -OK -run -off=check_dccm_wrap ${VMLINUX_PATH} 1>mdb.log 2>&1 &
